@@ -5,11 +5,76 @@ defpackage first-design :
   import jitx/commands
   import ocdb/defaults
   import ocdb/generic-components
+  import ocdb/land-patterns
+  import ocdb/bundles
+  import ocdb/symbols
+
+val fixture-shape = Rectangle(50.0, 50.0)
+
+pcb-landpattern test-point-mount :
+  ; 0.5mm radius plated through hole
+  pad p : pth-pad(0.5) at loc(0.0, 0.0)
+
+pcb-component test-point :
+  pin p
+  description = "Mounting for test probe"
+  landpattern = test-point-mount(p => test-point-mount.p)
+  reference-prefix = "TP"
+  symbol = test-point-sym(p => test-point-sym.p)
+
+; This will later take data imported from Altium
+pcb-module imported-test-points :
+  port dut-power : power
+  port digital-test : pin[4]
+  pin gnd
+  pin vdd
+
+  inst WAKE : test-point 
+  place(WAKE) at loc(3.0, 5.0) on Top
+
+  inst VDD : test-point 
+  place(VDD) at loc(-1.0, 4.0) on Top
+
+  inst GND : test-point 
+  place(GND) at loc(-1.0, 3.0) on Top
+
+  inst PGOOD : test-point 
+  place(PGOOD) at loc(2.0, 1.0) on Top
+
+  inst CLIFF : test-point 
+  place(CLIFF) at loc(2.0, 1.0) on Top
+
+  inst BOOM : test-point 
+  place(BOOM) at loc(2.0, 1.0) on Top
+
+  net (WAKE.p digital-test[0])
+  net (CLIFF.p digital-test[1])
+  net (PGOOD.p digital-test[2])
+  net (BOOM.p digital-test[3])
+  net (GND.p, dut-power.gnd)
+  net (VDD.p, dut-power.vdd)
 
 pcb-module my-design :
-  public inst r : chip-resistor(1.0e3)
 
-make-default-board(my-design, 4, 25.0, 10.0)
+  inst probes : imported-test-points
+  inst T7 : ocdb/labjack/T7/module
+
+  require dio-test:gpio[4] from T7
+
+  inst buffer : ocdb/maxim/MAX300x/module
+  net (buffer.vl probes.dut-power)
+  net (buffer.vcc.vdd T7.vs)
+
+  for i in 0 to 4 do :
+    net (probes.digital-test[i] buffer.io-vl[i + 1])
+    net (buffer.io-vcc[i + 1] dio-test[i].gpio)
+
+  net gnd (T7.gnd, buffer.vcc.gnd, probes.gnd)
+  symbol(gnd) = ocdb/symbols/ground-sym
+
+  schematic-group(probes) = schematic-group(buffer)
+
+make-default-board(my-design, 4, fixture-shape)
 
 ; Export CAD with default options
 export-cad()
@@ -17,6 +82,3 @@ export-cad()
 ; Show the Schematic and PCB for the design
 view-board()
 view-schematic()
-
-; Print the MPN of the resistor from the design
-println(mpn?(my-design.r))
